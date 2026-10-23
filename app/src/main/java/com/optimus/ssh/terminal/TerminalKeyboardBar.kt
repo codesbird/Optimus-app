@@ -7,13 +7,13 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -26,6 +26,9 @@ import com.optimus.ssh.ui.theme.*
 @Composable
 fun TerminalKeyboardBar(
     onSendKey: (String) -> Unit,
+    onToggleKeyboard: () -> Unit,
+    onFontSizeDecrease: () -> Unit,
+    onFontSizeIncrease: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val haptic = LocalHapticFeedback.current
@@ -55,6 +58,16 @@ fun TerminalKeyboardBar(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // Toggle Virtual Keyboard
+        IconKeyButton(
+            icon = Icons.Default.Keyboard,
+            contentDescription = "Toggle Keyboard",
+            onClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onToggleKeyboard()
+            }
+        )
+
         // ESC
         KeyButton(
             text = "ESC",
@@ -129,7 +142,7 @@ fun TerminalKeyboardBar(
             }
         )
         IconKeyButton(
-            icon = Icons.Default.KeyboardArrowLeft,
+            icon = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
             contentDescription = "Left",
             onClick = {
                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -137,11 +150,27 @@ fun TerminalKeyboardBar(
             }
         )
         IconKeyButton(
-            icon = Icons.Default.KeyboardArrowRight,
+            icon = Icons.AutoMirrored.Filled.KeyboardArrowRight,
             contentDescription = "Right",
             onClick = {
                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                 onSendKey(TerminalEmulator.KEY_ARROW_RIGHT)
+            }
+        )
+
+        // Font Zoom Buttons (A- / A+)
+        KeyButton(
+            text = "A-",
+            onClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onFontSizeDecrease()
+            }
+        )
+        KeyButton(
+            text = "A+",
+            onClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onFontSizeIncrease()
             }
         )
 

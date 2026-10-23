@@ -12,6 +12,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -19,7 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.optimus.ssh.ui.theme.*
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun TerminalScreen(
     viewModel: TerminalViewModel,
@@ -27,6 +29,20 @@ fun TerminalScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     var promptPassword by remember { mutableStateOf("") }
+
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val isImeVisible = WindowInsets.isImeVisible
+    var fontSizeSp by remember { mutableFloatStateOf(11f) }
+
+    val toggleKeyboard: () -> Unit = {
+        if (isImeVisible) {
+            keyboardController?.hide()
+        } else {
+            focusRequester.requestFocus()
+            keyboardController?.show()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -68,6 +84,16 @@ fun TerminalScreen(
                     }
                 },
                 actions = {
+                    // Keyboard Toggle Button
+                    IconButton(onClick = toggleKeyboard) {
+                        Icon(
+                            imageVector = Icons.Default.Keyboard,
+                            contentDescription = "Toggle Keyboard",
+                            tint = PrimaryAccent
+                        )
+                    }
+
+                    // Disconnect / Close Session Button
                     IconButton(
                         onClick = {
                             if (state.isConnected) {
@@ -183,13 +209,18 @@ fun TerminalScreen(
                     TerminalView(
                         emulator = viewModel.emulator,
                         onSendInput = { viewModel.sendInput(it) },
-                        onResizePty = { cols, rows -> viewModel.resizePty(cols, rows) }
+                        onResizePty = { cols, rows -> viewModel.resizePty(cols, rows) },
+                        fontSizeSp = fontSizeSp,
+                        focusRequester = focusRequester
                     )
                 }
 
                 // Mobile Developer Keyboard Accessory Bar
                 TerminalKeyboardBar(
-                    onSendKey = { viewModel.sendInput(it) }
+                    onSendKey = { viewModel.sendInput(it) },
+                    onToggleKeyboard = toggleKeyboard,
+                    onFontSizeDecrease = { fontSizeSp = (fontSizeSp - 1f).coerceAtLeast(8f) },
+                    onFontSizeIncrease = { fontSizeSp = (fontSizeSp + 1f).coerceAtMost(20f) }
                 )
             }
         }

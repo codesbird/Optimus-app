@@ -5,7 +5,6 @@ import android.graphics.Typeface
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
@@ -16,16 +15,19 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -33,6 +35,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.optimus.ssh.ui.theme.PrimaryAccent
+import kotlinx.coroutines.delay
 import kotlin.math.abs
 
 private const val SENTINEL = " "
@@ -43,15 +47,18 @@ fun TerminalView(
     onSendInput: (String) -> Unit,
     onResizePty: (cols: Int, rows: Int) -> Unit,
     modifier: Modifier = Modifier,
-    fontSizeSp: Float = 12f
+    fontSizeSp: Float = 11f,
+    focusRequester: FocusRequester = remember { FocusRequester() }
 ) {
     val density = LocalDensity.current
-    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
 
     // Use a persistent non-empty sentinel so Android IME Backspace key is reliably captured
     var textInput by remember { mutableStateOf(TextFieldValue(SENTINEL, TextRange(SENTINEL.length))) }
     var scrollOffsetY by remember { mutableStateOf(0) }
-    var scrollOffsetX by remember { mutableStateOf(0f) }
+    var scrollOffsetX by remember { mutableFloatStateOf(0f) }
+    var maxScrollXState by remember { mutableFloatStateOf(0f) }
+    var canvasWidthState by remember { mutableFloatStateOf(0f) }
 
     // Collect buffer updates to redraw canvas
     val updateTick by emulator.updateTick.collectAsState()
@@ -83,9 +90,23 @@ fun TerminalView(
     val charHeight = remember(fontMetrics) { fontMetrics.descent - fontMetrics.ascent }
     val baselineOffset = remember(fontMetrics) { -fontMetrics.ascent }
 
-    // Request keyboard focus automatically
+    // Request keyboard focus automatically with delay to ensure window focus
     LaunchedEffect(Unit) {
+        delay(200)
         focusRequester.requestFocus()
+        keyboardController?.show()
+    }
+
+    // Auto-scroll horizontally when typing to keep cursor visible
+    LaunchedEffect(emulator.buffer.cursorX, updateTick) {
+        if (scrollOffsetY == 0 && charWidth > 0 && canvasWidthState > 0) {
+            val cursorPx = emulator.buffer.cursorX * charWidth
+            if (cursorPx > scrollOffsetX + canvasWidthState - (charWidth * 2)) {
+                scrollOffsetX = (cursorPx - canvasWidthState + (charWidth * 3)).coerceIn(0f, maxScrollXState)
+            } else if (cursorPx < scrollOffsetX) {
+                scrollOffsetX = (cursorPx - (charWidth * 2)).coerceIn(0f, maxScrollXState)
+            }
+        }
     }
 
     Box(
@@ -96,6 +117,7 @@ fun TerminalView(
                 detectTapGestures(
                     onTap = {
                         focusRequester.requestFocus()
+                        keyboardController?.show()
                     },
                     onDoubleTap = {
                         // Double tap resets horizontal and vertical scroll
@@ -108,7 +130,7 @@ fun TerminalView(
                 detectDragGestures { _, dragAmount ->
                     if (abs(dragAmount.x) > abs(dragAmount.y) * 1.2f) {
                         // Horizontal swipe: scroll horizontally
-                        scrollOffsetX = (scrollOffsetX - dragAmount.x).coerceAtLeast(0f)
+                        scrollOffsetX = (scrollOffsetX - dragAmount.x).coerceIn(0f, maxScrollXState)
                     } else {
                         // Vertical swipe: scroll through terminal history
                         if (dragAmount.y > 0) {
@@ -120,55 +142,9 @@ fun TerminalView(
                     }
                 }
             }
-            .onKeyEvent { keyEvent ->
-                if (keyEvent.type == KeyEventType.KeyDown) {
-                    when (keyEvent.key) {
-                        Key.Enter -> {
-                            onSendInput(TerminalEmulator.KEY_ENTER)
-                            true
-                        }
-                        Key.Backspace -> {
-                            onSendInput(TerminalEmulator.KEY_BACKSPACE)
-                            true
-                        }
-                        Key.Tab -> {
-                            onSendInput(TerminalEmulator.KEY_TAB)
-                            true
-                        }
-                        Key.DirectionUp -> {
-                            onSendInput(TerminalEmulator.KEY_ARROW_UP)
-                            true
-                        }
-                        Key.DirectionDown -> {
-                            onSendInput(TerminalEmulator.KEY_ARROW_DOWN)
-                            true
-                        }
-                        Key.DirectionLeft -> {
-                            onSendInput(TerminalEmulator.KEY_ARROW_LEFT)
-                            true
-                        }
-                        Key.DirectionRight -> {
-                            onSendInput(TerminalEmulator.KEY_ARROW_RIGHT)
-                            true
-                        }
-                        Key.Escape -> {
-                            onSendInput(TerminalEmulator.KEY_ESC)
-                            true
-                        }
-                        else -> {
-                            val unicode = keyEvent.utf16CodePoint
-                            if (unicode > 0) {
-                                onSendInput(unicode.toChar().toString())
-                                true
-                            } else false
-                        }
-                    }
-                } else false
-            }
-            .focusRequester(focusRequester)
-            .focusable()
     ) {
         // Invisible input field catching virtual keyboard input
+        // Has valid non-zero layout size (48dp) and transparent styling so Android IME recognizes it
         BasicTextField(
             value = textInput,
             onValueChange = { newValue ->
@@ -183,7 +159,10 @@ fun TerminalView(
                         newValue.text
                     }
                     if (typed.isNotEmpty()) {
-                        onSendInput(typed)
+                        val formatted = typed
+                            .replace("\r\n", TerminalEmulator.KEY_ENTER)
+                            .replace("\n", TerminalEmulator.KEY_ENTER)
+                        onSendInput(formatted)
                     }
                     textInput = TextFieldValue(SENTINEL, TextRange(1))
                 } else if (newValue.text != SENTINEL) {
@@ -193,7 +172,7 @@ fun TerminalView(
             keyboardOptions = KeyboardOptions(
                 capitalization = KeyboardCapitalization.None,
                 autoCorrectEnabled = false,
-                keyboardType = KeyboardType.Text,
+                keyboardType = KeyboardType.Ascii,
                 imeAction = ImeAction.None
             ),
             keyboardActions = KeyboardActions(
@@ -201,10 +180,70 @@ fun TerminalView(
                     onSendInput(TerminalEmulator.KEY_ENTER)
                 }
             ),
+            textStyle = TextStyle(
+                color = Color.Transparent,
+                fontSize = 1.sp
+            ),
+            cursorBrush = SolidColor(Color.Transparent),
             modifier = Modifier
-                .size(1.dp)
-                .alpha(0.01f)
+                .size(48.dp)
                 .focusRequester(focusRequester)
+                .onKeyEvent { keyEvent ->
+                    if (keyEvent.type == KeyEventType.KeyDown) {
+                        if (keyEvent.isCtrlPressed) {
+                            val char = keyEvent.utf16CodePoint.toChar()
+                            if (char.isLetter()) {
+                                onSendInput(TerminalEmulator.ctrl(char))
+                                return@onKeyEvent true
+                            }
+                        }
+                        when (keyEvent.key) {
+                            Key.Enter -> {
+                                onSendInput(TerminalEmulator.KEY_ENTER)
+                                true
+                            }
+                            Key.Backspace -> {
+                                onSendInput(TerminalEmulator.KEY_BACKSPACE)
+                                true
+                            }
+                            Key.Tab -> {
+                                onSendInput(TerminalEmulator.KEY_TAB)
+                                true
+                            }
+                            Key.DirectionUp -> {
+                                onSendInput(TerminalEmulator.KEY_ARROW_UP)
+                                true
+                            }
+                            Key.DirectionDown -> {
+                                onSendInput(TerminalEmulator.KEY_ARROW_DOWN)
+                                true
+                            }
+                            Key.DirectionLeft -> {
+                                onSendInput(TerminalEmulator.KEY_ARROW_LEFT)
+                                true
+                            }
+                            Key.DirectionRight -> {
+                                onSendInput(TerminalEmulator.KEY_ARROW_RIGHT)
+                                true
+                            }
+                            Key.Escape -> {
+                                onSendInput(TerminalEmulator.KEY_ESC)
+                                true
+                            }
+                            Key.Delete -> {
+                                onSendInput(TerminalEmulator.KEY_DELETE)
+                                true
+                            }
+                            else -> {
+                                val unicode = keyEvent.utf16CodePoint
+                                if (unicode > 0) {
+                                    onSendInput(unicode.toChar().toString())
+                                    true
+                                } else false
+                            }
+                        }
+                    } else false
+                }
         )
 
         // Terminal Canvas Rendering
@@ -215,20 +254,24 @@ fun TerminalView(
 
             val canvasWidth = size.width
             val canvasHeight = size.height
+            canvasWidthState = canvasWidth
 
             if (charWidth > 0 && charHeight > 0) {
                 val measuredCols = (canvasWidth / charWidth).toInt().coerceIn(30, 200)
                 val measuredRows = (canvasHeight / charHeight).toInt().coerceIn(5, 100)
+                // Guarantee at least 80 standard columns VT100 buffer
+                val targetCols = maxOf(80, measuredCols)
 
-                if (measuredCols != emulator.buffer.cols || measuredRows != emulator.buffer.rows) {
-                    emulator.buffer.resize(measuredCols, measuredRows)
-                    onResizePty(measuredCols, measuredRows)
+                if (targetCols != emulator.buffer.cols || measuredRows != emulator.buffer.rows) {
+                    emulator.buffer.resize(targetCols, measuredRows)
+                    onResizePty(targetCols, measuredRows)
                 }
             }
 
             // Clamp horizontal scroll so it doesn't scroll excessively past the line width
             val contentWidthPx = emulator.buffer.cols * charWidth
             val maxScrollX = (contentWidthPx - canvasWidth).coerceAtLeast(0f)
+            maxScrollXState = maxScrollX
             val currentScrollX = scrollOffsetX.coerceIn(0f, maxScrollX)
 
             val lines = emulator.buffer.getLines(scrollOffsetY)
@@ -288,6 +331,49 @@ fun TerminalView(
                     color = AnsiColor.CURSOR_COLOR.copy(alpha = cursorAlpha),
                     topLeft = Offset(cursorX, cursorY),
                     size = Size(charWidth, charHeight)
+                )
+            }
+
+            // Subtle horizontal scroll indicator
+            if (maxScrollX > 0f) {
+                val barHeight = 2.5.dp.toPx()
+                val barY = canvasHeight - barHeight - 1.dp.toPx()
+                val visibleRatio = (canvasWidth / contentWidthPx).coerceIn(0.1f, 1f)
+                val thumbWidth = (canvasWidth * visibleRatio).coerceAtLeast(30.dp.toPx())
+                val scrollRatio = if (maxScrollX > 0f) (currentScrollX / maxScrollX).coerceIn(0f, 1f) else 0f
+                val thumbX = scrollRatio * (canvasWidth - thumbWidth)
+
+                drawRect(
+                    color = Color(0x22FFFFFF),
+                    topLeft = Offset(0f, barY),
+                    size = Size(canvasWidth, barHeight)
+                )
+                drawRect(
+                    color = PrimaryAccent.copy(alpha = 0.7f),
+                    topLeft = Offset(thumbX, barY),
+                    size = Size(thumbWidth, barHeight)
+                )
+            }
+
+            // Subtle vertical scrollback indicator
+            if (emulator.buffer.scrollbackSize > 0 && scrollOffsetY > 0) {
+                val barWidth = 2.5.dp.toPx()
+                val barX = canvasWidth - barWidth - 1.dp.toPx()
+                val totalLines = emulator.buffer.scrollbackSize + emulator.buffer.rows
+                val visibleRatio = (emulator.buffer.rows.toFloat() / totalLines).coerceIn(0.05f, 1f)
+                val thumbHeight = (canvasHeight * visibleRatio).coerceAtLeast(30.dp.toPx())
+                val scrollRatio = 1f - (scrollOffsetY.toFloat() / emulator.buffer.scrollbackSize).coerceIn(0f, 1f)
+                val thumbY = scrollRatio * (canvasHeight - thumbHeight)
+
+                drawRect(
+                    color = Color(0x22FFFFFF),
+                    topLeft = Offset(barX, 0f),
+                    size = Size(barWidth, canvasHeight)
+                )
+                drawRect(
+                    color = PrimaryAccent.copy(alpha = 0.7f),
+                    topLeft = Offset(barX, thumbY),
+                    size = Size(barWidth, thumbHeight)
                 )
             }
         }
