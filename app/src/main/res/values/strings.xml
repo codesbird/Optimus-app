@@ -1,0 +1,30 @@
+<resources>
+    <string name="app_name">Optimus</string>
+    <string name="hosts_title">Hosts</string>
+    <string name="add_host">Add Host</string>
+    <string name="edit_host">Edit Host</string>
+    <string name="delete_host">Delete Host</string>
+    <string name="host_label">Label</string>
+    <string name="host_address">Hostname / IP</string>
+    <string name="host_port">Port</string>
+    <string name="username">Username</string>
+    <string name="password">Password</string>
+    <string name="private_key">Private Key</string>
+    <string name="auth_type">Authentication Method</string>
+    <string name="connect">Connect</string>
+    <string name="disconnect">Disconnect</string>
+    <string name="connecting">Connecting…</string>
+    <string name="connected">Connected</string>
+    <string name="connection_failed">Connection Failed</string>
+    <string name="terminal_title">Terminal</string>
+    <string name="sftp_title">SFTP</string>
+    <string name="tunnels_title">Port Forwarding</string>
+    <string name="snippets_title">Snippets</string>
+    <string name="settings_title">Settings</string>
+    <string name="app_lock_title">Security Lock</string>
+    <string name="unlock_prompt">Unlock Optimus to access your SSH keys and hosts</string>
+    <string name="biometric_auth">Biometric Authentication</string>
+    <string name="enter_passcode">Enter Master Passcode</string>
+    <string name="channel_ssh_service">SSH Active Connections</string>
+    <string name="channel_ssh_service_desc">Keeps background SSH sessions and tunnels active</string>
+</resources>
